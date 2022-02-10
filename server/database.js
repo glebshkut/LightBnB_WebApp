@@ -101,9 +101,71 @@ exports.getAllReservations = getAllReservations;
  * @return {Promise<[{}]>}  A promise to the properties.
  */
  const getAllProperties = (options, limit = 10) => {
-  return pool
-    .query(`SELECT * FROM properties LIMIT $1`, [limit])
-    .then((result) => result.rows)
+  const queryParams = [];
+  // quesryString
+  let queryString = `
+  SELECT properties.*, avg(property_reviews.rating) as average_rating
+  FROM properties
+  JOIN property_reviews ON properties.id = property_id
+  `;
+
+  let previousWhere = false;
+  // owner_id
+  if (options.owner_id) {
+    queryParams.push(options.owner_id);
+    queryString += `WHERE owner_id = $${queryParams.length} `;
+    previousWhere = true;
+  }
+  // min_price
+  if (options.minimum_price_per_night) {
+    queryParams.push(`${options.minimum_price_per_night * 100}`);
+    if (previousWhere) {
+      queryString += ` AND `;
+    } else {
+      queryString += ` WHERE `
+    }
+    queryString += `cost_per_night >= $${queryParams.length} `;
+    previousWhere = true;
+  }
+  // max_price
+  if (options.maximum_price_per_night) {
+    queryParams.push(`${options.maximum_price_per_night * 100}`);
+    if (previousWhere) {
+      queryString += ` AND `;
+    } else {
+      queryString += ` WHERE `
+    }
+    queryString += `cost_per_night <= $${queryParams.length} `;
+    previousWhere = true;
+  }
+
+  // city
+  if (options.city) {
+    queryParams.push(`%${options.city}%`);
+    if (previousWhere) {
+      queryString += ` AND `;
+    } else {
+      queryString += ` WHERE `
+    }
+    queryString += `city LIKE $${queryParams.length} `;
+  }
+
+  // limit
+  queryString += `
+  GROUP BY properties.id
+  `
+  // minimum_rating
+  if (options.minimum_rating) {
+    queryParams.push(options.minimum_rating);
+    queryString += `HAVING avg(property_reviews.rating) >= $${queryParams.length} `;
+  }
+  queryParams.push(limit);
+  queryString += `
+  ORDER BY cost_per_night
+  LIMIT $${queryParams.length};`
+
+  // 6
+  return pool.query(queryString, queryParams).then((res) => res.rows)
     .catch((err) => {
       console.log(err.message);
     });
